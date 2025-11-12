@@ -3,7 +3,6 @@ import numpy as np
 import torch
 import time
 import sounddevice as sd
-
 from logger_client import logger
 from tts import TextToSpeech
 from io_devices import mic_device
@@ -21,8 +20,7 @@ class AudioCapture:
         self.loop = asyncio.get_event_loop()
         self.tts = tts
         self.device = mic_device
-        self.ai_is_speaking = False  # Track if AI is currently speaking
-        self.speech_confirmed = False  # Only interrupt if we confirm sustained speech
+        self.ai_is_speaking = False
 
     def notify_listening(self):
         logger.info("Listening...")
@@ -30,9 +28,9 @@ class AudioCapture:
     async def start(self):
         chunk = self.vad.chunk_size
         device = self.device
-        speech_confidence = 0  # Track consecutive speech detections
-        paused_speech_buffer = []  # Buffer speech detected while paused
-        sustained_pause_confidence = 0  # Track sustained detections during pause
+        speech_confidence = 0
+        paused_speech_buffer = []
+        sustained_pause_confidence = 0
 
         def callback(indata, frames, t, status):
             nonlocal speech_confidence, paused_speech_buffer, sustained_pause_confidence
@@ -41,23 +39,18 @@ class AudioCapture:
             self.vad.add_audio(samples)
 
             for prob, chunk_data in self.vad.get_speech_chunks():
-                # Higher threshold for interrupt detection (0.7) vs normal speech (0.5)
                 speech_detected = prob > self.vad.threshold
                 
-                # If paused (AI speaking), buffer detected speech for later analysis
                 if self.is_paused and speech_detected:
                     paused_speech_buffer.append((prob, chunk_data))
                     
-                    # Track sustained high-confidence speech
                     if prob > 0.90:
                         sustained_pause_confidence += 1
                     else:
                         sustained_pause_confidence = 0
                     
-                    # Only interrupt if we get sustained high-confidence speech (3+ chunks)
-                    # This prevents interruption from single artifacts/clicks
                     if sustained_pause_confidence >= 3:  
-                        logger.info(f"⚠️  Sustained strong speech detected during pause (confidence: {prob:.3f})")
+                        logger.info(f"User interrupted (confidence: {prob:.3f})")
                         self.tts.user_speech_detected()
                         self.audio_buffer = []
                         self.is_speaking = False
@@ -68,7 +61,6 @@ class AudioCapture:
                 else:
                     sustained_pause_confidence = 0
                 
-                # Reset confidence when mic is unpaused
                 if not self.is_paused and paused_speech_buffer:
                     paused_speech_buffer = []
                     speech_confidence = 0
@@ -78,10 +70,9 @@ class AudioCapture:
                 else:
                     speech_confidence = 0
                 
-                # Only process user speech if not paused (avoid feedback from speaker)
                 if speech_detected:
                     if not self.is_paused:
-                        if self.is_speaking == False: 
+                        if not self.is_speaking: 
                             self.notify_listening()
                         self.is_speaking = True
                         self.audio_buffer.append(chunk_data.numpy())
