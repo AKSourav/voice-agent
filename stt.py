@@ -21,7 +21,7 @@ class SpeechToTextUltraFast:
                 model="nova-2",
                 language="en",
                 request_options={
-                    "timeout_in_seconds": 15,
+                    "timeout_in_seconds": 5,
                     "max_retries": 0,
                 },
             )
@@ -39,7 +39,7 @@ class SpeechToTextUltraFast:
         if len(indices) == 0:
             return audio
         
-        start = max(0, indices[0] - 3200)
-        end = min(len(audio), indices[-1] + 3200)
+        start = max(0, indices[0] - 1600)
+        end = min(len(audio), indices[-1] + 1600)
         
         return audio[start:end]

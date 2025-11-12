@@ -64,7 +64,7 @@ class TextToSpeech:
 
         try:
             audio_chunks = []
-            min_chunks = 5
+            min_chunks = 2
             started = False
             
             for chunk in stream:
@@ -115,7 +115,7 @@ class TextToSpeech:
                     elif not self._stop_event.is_set() and self.is_paused:
                         self.resume()
                     
-                    await asyncio.sleep(0.05)
+                    await asyncio.sleep(0.02)
                 
                 self.is_playing = False
 

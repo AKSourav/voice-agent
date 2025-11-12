@@ -78,7 +78,7 @@ class AudioCapture:
                         self.audio_buffer.append(chunk_data.numpy())
                         self.last_speech_time = time.time()
                 else:
-                    if self.is_speaking and time.time() - self.last_speech_time > 0.7:
+                    if self.is_speaking and time.time() - self.last_speech_time > 0.3:
                         self.is_speaking = False
                         buf = self.audio_buffer.copy()
                         self.audio_buffer = []
