@@ -17,10 +17,10 @@ class SimpleAgent:
         self.queue = asyncio.Queue()
 
         self.vad = VoiceActivityDetector(sample_rate)
-        self.audio = AudioCapture(sample_rate, self.vad, self.queue)
+        self.tts = TextToSpeech(os.environ["ELEVEN_API_KEY"])
+        self.audio = AudioCapture(sample_rate, self.vad, self.queue, self.tts)
         self.stt = SpeechToText(os.environ["DEEPGRAM_API_KEY"])
         self.llm = LLM(os.environ["GOOGLE_API_KEY"])
-        self.tts = TextToSpeech(os.environ["ELEVEN_API_KEY"])
         
         self.loop = asyncio.get_event_loop()
         self.current_task = None

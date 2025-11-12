@@ -1,110 +1,86 @@
 import asyncio
-import pygame
-from io import BytesIO
+import numpy as np
+import sounddevice as sd
 from elevenlabs import ElevenLabs
+from io_devices import speaker_device
 
 class TextToSpeech:
-    def __init__(self, api_key, voice_id="pNInz6obpgDQGcFmaJgB"):
+    """
+    ElevenLabs TTS with built-in streaming (low-latency) playback using the official client.
+    """
+
+    def __init__(self, api_key: str, voice_id: str = "pNInz6obpgDQGcFmaJgB"):
         self.client = ElevenLabs(api_key=api_key)
         self.voice_id = voice_id
-
-        # init pygame mixer once
-        pygame.mixer.init(frequency=22050, size=-16, channels=2)
-        self.channel = pygame.mixer.Channel(0)
+        self.device = speaker_device
+        # audio setup
+        self.sample_rate = 22050
+        self.stream = sd.OutputStream(samplerate=self.sample_rate, channels=1, dtype="int16", device=speaker_device)
 
         # control flags
         self._stop_event = asyncio.Event()
         self._cancel_event = asyncio.Event()
 
-    # ======== Control Methods ========
-
+    # ====== Control Methods ======
     def interrupt(self):
-        print("interrupt called")
+        """Immediately stop and cancel playback."""
+        print("Interrupt called")
         self._cancel_event.set()
         self._stop_event.set()
         self.stop_audio()
 
     def pause(self):
-        print("pause called")
+        """Pause playback."""
+        print("⏸Pause called")
         self._stop_event.set()
-        self.pause_audio()
 
     def resume(self):
-        print("resume called")
+        """Resume playback."""
+        print("Resume called")
         self._stop_event.clear()
-        self.resume_audio()
-
-    # ======== Audio Control ========
-
-    def play_audio(self, data: bytes):
-        """Play an MP3 buffer using pygame."""
-        from pygame import mixer
-        from tempfile import NamedTemporaryFile
-
-        # Save mp3 chunk temporarily (pygame needs a file-like object)
-        with NamedTemporaryFile(delete=True, suffix=".mp3") as f:
-            f.write(data)
-            f.flush()
-            sound = mixer.Sound(f.name)
-            self.channel.play(sound)
-
-            # Block until this small chunk finishes or canceled
-            while self.channel.get_busy() and not self._cancel_event.is_set():
-                if self._stop_event.is_set():
-                    mixer.pause()
-                    while self._stop_event.is_set() and not self._cancel_event.is_set():
-                        pygame.time.wait(10)
-                    mixer.unpause()
-                pygame.time.wait(10)
-
-    def pause_audio(self):
-        pygame.mixer.pause()
-
-    def resume_audio(self):
-        pygame.mixer.unpause()
 
     def stop_audio(self):
-        pygame.mixer.stop()
+        """Completely stop current playback."""
+        self.stream.stop()
 
-    # ======== Async Stream Method ========
-
+    # ====== Main Async Streaming ======
     async def speak_stream(self, text: str):
         if not text or not text.strip():
             return
 
-        # reset flags
         self._stop_event.clear()
         self._cancel_event.clear()
 
-        loop = asyncio.get_running_loop()
+        # Start audio stream
+        self.stream.start()
 
-        # get ElevenLabs stream in executor (blocking)
-        stream_res = await loop.run_in_executor(
-            None,
-            lambda: self.client.text_to_speech.stream(
-                voice_id=self.voice_id,
-                text=text,
-                model_id="eleven_multilingual_v2",
-                output_format="mp3_22050_32",
-            ),
+        print("Starting ElevenLabs TTS stream...")
+
+        # Get async loop reference
+        loop = asyncio.get_event_loop()
+
+        # Start ElevenLabs TTS streaming generator
+        stream = self.client.text_to_speech.stream(
+            voice_id=self.voice_id,
+            text=text,
+            model_id="eleven_multilingual_v2",
+            output_format="pcm_22050",  # raw PCM data for immediate playback
         )
 
-        batch = b""
-        limit = 80000
+        try:
+            for chunk in stream:
+                if self._cancel_event.is_set():
+                    print("Cancel event detected, stopping playback.")
+                    break
 
-        for chunk in stream_res:
-            if self._cancel_event.is_set():
-                return
+                # Wait if paused
+                while self._stop_event.is_set() and not self._cancel_event.is_set():
+                    print(f"{self._stop_event.is_set()=}")
+                    await asyncio.sleep(0.3)
 
-            # Wait if paused
-            while self._stop_event.is_set() and not self._cancel_event.is_set():
-                await asyncio.sleep(0.01)
+                audio_data = np.frombuffer(chunk, dtype=np.int16)
+                self.stream.write(audio_data)
 
-            batch += chunk
-
-            if len(batch) > limit:
-                await loop.run_in_executor(None, self.play_audio, batch)
-                batch = b""
-
-        if batch and not self._cancel_event.is_set():
-            await loop.run_in_executor(None, self.play_audio, batch)
+        finally:
+            self.stream.stop()
+            print("Stream closed cleanly")
