@@ -1,37 +1,56 @@
-import io
 import numpy as np
-import soundfile as sf
-from deepgram import DeepgramClient
+import whisper
+from logger_client import logger
 
 
 class SpeechToTextUltraFast:
-    def __init__(self, api_key):
-        self.client = DeepgramClient(api_key=api_key)
+    def __init__(self, api_key=None):
+        try:
+            logger.info("Loading Whisper model...")
+            self.model = whisper.load_model("tiny")
+            logger.info("Whisper model loaded successfully")
+            self.initialized = True
+        except Exception as e:
+            logger.error(f"Failed to load Whisper model: {e}")
+            self.initialized = False
+            raise
 
     def transcribe(self, audio_np):
-        audio_trimmed = self._trim_silence(audio_np)
+        if not self.initialized:
+            return ""
         
-        buf = io.BytesIO()
-        sf.write(buf, audio_trimmed, 16000, format="WAV", subtype="PCM_16")
-        buf.seek(0)
-
+        if not self._is_valid_audio(audio_np):
+            return ""
+        
         try:
-            res = self.client.listen.v1.media.transcribe_file(
-                request=buf,
-                model="nova-2",
+            audio_trimmed = self._trim_silence(audio_np)
+            
+            result = self.model.transcribe(
+                audio_trimmed,
                 language="en",
-                request_options={
-                    "timeout_in_seconds": 5,
-                    "max_retries": 0,
-                },
+                fp16=False,
+                verbose=False,
             )
-
-            transcript = res.results.channels[0].alternatives[0].transcript
-            return transcript.strip() if transcript else ""
-        except Exception:
+            
+            transcript = result.get("text", "").strip()
+            
+            if transcript:
+                logger.info(f"Transcribed: {transcript}")
+            
+            return transcript
+        except Exception as e:
+            logger.error(f"Transcription error: {e}")
             return ""
 
-    def _trim_silence(self, audio, threshold=0.02):
+    def _is_valid_audio(self, audio_np):
+        if audio_np is None or len(audio_np) == 0:
+            return False
+        return len(audio_np) >= 8000
+
+    def _trim_silence(self, audio, threshold=0.01):
+        if len(audio) == 0:
+            return audio
+        
         energy = np.abs(audio)
         above_threshold = energy > threshold
         
@@ -39,7 +58,8 @@ class SpeechToTextUltraFast:
         if len(indices) == 0:
             return audio
         
-        start = max(0, indices[0] - 1600)
-        end = min(len(audio), indices[-1] + 1600)
+        margin_samples = int(16000 * 0.2)
+        start = max(0, indices[0] - margin_samples)
+        end = min(len(audio), indices[-1] + margin_samples)
         
         return audio[start:end]

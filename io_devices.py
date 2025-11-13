@@ -40,3 +40,6 @@ def get_sound_devices(disable_loopback=True):
 
 
 mic_device, speaker_device = get_sound_devices()
+devices = sd.query_devices()
+mic_device_name = devices[mic_device]["name"]
+speaker_device_name = devices[speaker_device]["name"]

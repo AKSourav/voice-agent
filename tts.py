@@ -2,6 +2,7 @@ import asyncio
 import numpy as np
 import pygame
 from elevenlabs import ElevenLabs
+from io_devices import speaker_device_name
 
 
 class TextToSpeech:
@@ -9,7 +10,26 @@ class TextToSpeech:
         self.client = ElevenLabs(api_key=api_key)
         self.voice_id = voice_id
         self.sample_rate = 22050
-        pygame.mixer.init(frequency=self.sample_rate, size=-16, channels=1, buffer=4096)
+        self.output_device = speaker_device_name
+
+        if pygame.mixer.get_init():
+            pygame.mixer.quit()
+
+        try:
+            pygame.mixer.init(
+                frequency=self.sample_rate,
+                size=-16,
+                channels=1,
+                buffer=4096,
+                devicename=self.output_device,
+            )
+        except pygame.error:
+            pygame.mixer.init(
+                frequency=self.sample_rate,
+                size=-16,
+                channels=1,
+                buffer=4096,
+            )
         
         self._stop_event = asyncio.Event()
         self._cancel_event = asyncio.Event()
