@@ -75,11 +75,9 @@ class Agent:
 
         try:
             self.audio.ai_is_speaking = True
-            self.audio.is_paused = True
             await self.tts.speak_stream(reply)
         finally:
             self.audio.ai_is_speaking = False
-            self.audio.is_paused = False
 
 
 async def main():

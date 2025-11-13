@@ -15,7 +15,6 @@ class AudioCapture:
         self.queue = queue
         self.audio_buffer = []
         self.is_speaking = False
-        self.is_paused = False
         self.last_speech_time = time.time()
         self.loop = asyncio.get_event_loop()
         self.tts = tts
@@ -26,14 +25,12 @@ class AudioCapture:
         logger.info("Listening...")
 
     async def start(self):
-        chunk = self.vad.chunk_size
         device = self.device
-        speech_confidence = 0
-        paused_speech_buffer = []
-        sustained_pause_confidence = 0
 
         def callback(indata, frames, t, status):
-            nonlocal speech_confidence, paused_speech_buffer, sustained_pause_confidence
+            if self.ai_is_speaking:
+                self.audio_buffer = []
+                return
             
             samples = torch.tensor(indata.flatten(), dtype=torch.float32)
             self.vad.add_audio(samples)
@@ -41,42 +38,12 @@ class AudioCapture:
             for prob, chunk_data in self.vad.get_speech_chunks():
                 speech_detected = prob > self.vad.threshold
                 
-                if self.is_paused and speech_detected:
-                    paused_speech_buffer.append((prob, chunk_data))
-                    
-                    if prob > 0.90:
-                        sustained_pause_confidence += 1
-                    else:
-                        sustained_pause_confidence = 0
-                    
-                    if sustained_pause_confidence >= 3:  
-                        logger.info(f"User interrupted (confidence: {prob:.3f})")
-                        self.tts.user_speech_detected()
-                        self.audio_buffer = []
-                        self.is_speaking = False
-                        paused_speech_buffer = []
-                        speech_confidence = 0
-                        sustained_pause_confidence = 0
-                        return
-                else:
-                    sustained_pause_confidence = 0
-                
-                if not self.is_paused and paused_speech_buffer:
-                    paused_speech_buffer = []
-                    speech_confidence = 0
-                
                 if speech_detected:
-                    speech_confidence += 1
-                else:
-                    speech_confidence = 0
-                
-                if speech_detected:
-                    if not self.is_paused:
-                        if not self.is_speaking: 
-                            self.notify_listening()
-                        self.is_speaking = True
-                        self.audio_buffer.append(chunk_data.numpy())
-                        self.last_speech_time = time.time()
+                    if not self.is_speaking:
+                        self.notify_listening()
+                    self.is_speaking = True
+                    self.audio_buffer.append(chunk_data.numpy())
+                    self.last_speech_time = time.time()
                 else:
                     if self.is_speaking and time.time() - self.last_speech_time > 0.3:
                         self.is_speaking = False
